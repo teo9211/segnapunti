@@ -979,10 +979,11 @@
                             ${appState.sessionData.length === 0 ? `
                                 <tr><td colspan="12" class="p-4 text-center">Nessuna sessione trovata.</td></tr>
                             ` : appState.sessionData.map(session => `
-                                <tr class="${session.type === 'Gara' ? 'bg-orange-900 bg-opacity-30' : 'bg-gray-800'} hover:bg-secondary-dark cursor-pointer text-xs sm:text-sm"
-                                    onclick="window.setView('detailedSummary', { sessionId: '${session.id}' })"> <td class="font-bold text-primary-orange underline">${session.data || 'N/D'}</td>
-                                    <td>${session.arciere}</td>
-                                    <td>${session.type}</td>
+<tr class="${session.type === 'Gara' ? 'bg-orange-900 bg-opacity-30' : 'bg-gray-800'} hover:bg-secondary-dark cursor-pointer text-xs sm:text-sm"
+    onclick="window.setView('detailedSummary', { sessionId: '${session.id}' })">
+    <td class="font-bold text-primary-orange">${session.data || 'N/D'}</td>
+    <td>${session.arciere}</td>
+    <td>${session.type}</td>
                                     <td class="font-extrabold text-white">${session.totalScore || 0}</td>
                                     <td>${session.turn1Score || 0}</td>
                                     <td>${session.turn2Score || 0}</td>
