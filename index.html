@@ -114,7 +114,6 @@
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
         // Configurazione di default, usata se __firebase_config non è disponibile (ad esempio, per test locali)
-        // ORA USA LA TUA CONFIGURAZIONE FORNITA (segnapunti-29e7d)
         const rawFirebaseConfig = {
             apiKey: "AIzaSyBXBhK1WL8781xQ0iGoSkbEK6rCNAg8-UA",
             authDomain: "segnapunti-29e7d.firebaseapp.com",
@@ -391,7 +390,9 @@
                         renderDataSummary();
                         break;
                     case 'detailedSummary':
-                        appState.detailedSession = data.session;
+                        // CORREZIONE: Cerca la sessione nello stato tramite ID
+                        const sessionToView = appState.sessionData.find(s => s.id === data.sessionId);
+                        appState.detailedSession = sessionToView;
                         renderDetailedSummary();
                         break;
                     case 'charts':
@@ -548,31 +549,26 @@
                 return Math.round(diffMs / (1000 * 60)); // Durata in minuti
             }
 
-            // CORREZIONE 1: Aggiunta/Modifica della funzione prepareTurnData
+            // Funzione di utilità per serializzare i dati del turno
             function prepareTurnData(turn) {
                 if (!turn || !turn.grid) return null;
                 
-                // CONVERSIONE CHIAVE: Serializza la griglia 2D (Array annidato)
-                // in un array di stringhe JSON, una per ogni riga (volè).
+                // Serializza la griglia 2D (Array annidato) in un array di stringhe JSON.
                 const serializedGrid = turn.grid.map(row => JSON.stringify(row));
 
                 return {
                     summary: turn.summary,
-                    // Salva la griglia in formato supportato (array di stringhe)
                     grid: serializedGrid
                 };
             }
 
-            // CORREZIONE 2: Modifica della funzione saveSessionToFirestore
+            // Correzione per salvare correttamente turn2Average anche se 0
             async function saveSessionToFirestore() {
                 try {
                     const session = appState.currentSession;
                     const results = calculateTotalSessionResults(session);
 
-                    // Prepara i dati del turno 1 serializzando la griglia
                     const turn1Data = prepareTurnData(session.turn1);
-                    
-                    // Prepara i dati del turno 2 serializzando la griglia (se esiste)
                     const turn2Data = session.turn2 ? prepareTurnData(session.turn2) : null;
                     
                     const finalSessionData = {
@@ -597,12 +593,12 @@
                 }
             }
 
-            // CORREZIONE 3: Modifica per gestire i valori undefined nel Turno 2
+            // Funzione corretta per calcolare i totali gestendo il Turno 2 opzionale
             function calculateTotalSessionResults(session) {
                 // Inizializza il riepilogo del Turno 1 (dovrebbe sempre esistere se arriviamo qui)
                 const turn1Summary = session.turn1?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0, average: 0 };
                 
-                // Inizializza il riepilogo del Turno 2. Se non esiste, usiamo un oggetto con tutti i valori a 0.
+                // Inizializza il riepilogo del Turno 2. Se non esiste (sessione a turno singolo), usiamo tutti i valori a 0.
                 const turn2Summary = session.turn2?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0, average: 0 };
                 
                 const totalScore = turn1Summary.score + turn2Summary.score;
@@ -891,10 +887,7 @@
                 if (filterState.distanza) q = query(q, where('distanza', '==', filterState.distanza));
                 if (filterState.tipoTarga) q = query(q, where('tipoTarga', '==', filterState.tipoTarga));
                 if (filterState.type) q = query(q, where('type', '==', filterState.type));
-                // Filtro arciere (non ideale per Firestore, si filtra in memoria)
 
-                // Ordine: data crescente (basato sul campo data stringa) - Manteniamo l'ordine in JS per evitare problemi di indice
-                
                 // onSnapshot per il real-time
                 unsubscribeSnapshot = onSnapshot(q, (querySnapshot) => {
                     const sessions = [];
@@ -903,7 +896,7 @@
                     });
                     
                     // Ordina i dati in memoria per data (crescente)
-                    sessions.sort((a, b) => new Date(a.data) - new Date(b.data)); // USIAMO a.data e b.data
+                    sessions.sort((a, b) => new Date(a.data) - new Date(b.data));
 
                     // Filtra per arciere in memoria
                     let filteredSessions = sessions;
@@ -987,8 +980,8 @@
                                 <tr><td colspan="12" class="p-4 text-center">Nessuna sessione trovata.</td></tr>
                             ` : appState.sessionData.map(session => `
                                 <tr class="${session.type === 'Gara' ? 'bg-orange-900 bg-opacity-30' : 'bg-gray-800'} hover:bg-secondary-dark cursor-pointer text-xs sm:text-sm"
-                                    onclick="window.setView('detailedSummary', { session: ${JSON.stringify(session).replace(/'/g, '&#39;')} })">
-                                    <td class="font-bold text-primary-orange underline">${session.data || 'N/D'}</td> <td>${session.arciere}</td>
+                                    onclick="window.setView('detailedSummary', { sessionId: '${session.id}' })"> <td class="font-bold text-primary-orange underline">${session.data || 'N/D'}</td>
+                                    <td>${session.arciere}</td>
                                     <td>${session.type}</td>
                                     <td class="font-extrabold text-white">${session.totalScore || 0}</td>
                                     <td>${session.turn1Score || 0}</td>
@@ -1017,12 +1010,14 @@
                     window.setView('dataSummary');
                     return;
                 }
-
-                const T1 = session.turn1.summary;
-                const T2 = session.turn2?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, average: 0 };
                 
+                // T2Summary è gestito da calculateTotalSessionResults, ma qui usiamo i dati di Firestore
+                // Assicurati che session.turn2 esista per evitare errori di accesso
+                const hasTurn2 = session.turn2 && session.turn2.summary && session.turn2.summary.score > 0;
+
                 const html = `
-                    <h2 class="text-3xl font-bold mb-4 text-white">${session.type} del ${session.data || 'N/D'}</h2> <p class="text-xl mb-6 text-primary-orange">Arciere: ${session.arciere} | ${session.distanza} | ${session.tipoTarga}</p>
+                    <h2 class="text-3xl font-bold mb-4 text-white">${session.type} del ${session.data || 'N/D'}</h2>
+                    <p class="text-xl mb-6 text-primary-orange">Arciere: ${session.arciere} | ${session.distanza} | ${session.tipoTarga}</p>
 
                     <div class="space-y-6">
                         <div class="bg-secondary-dark p-4 rounded-xl shadow-lg border border-primary-orange">
@@ -1041,12 +1036,12 @@
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             ${renderTurnSummaryCard(session.turn1, 'Primo Turno', 'T1')}
-                            ${session.turn2 ? renderTurnSummaryCard(session.turn2, 'Secondo Turno', 'T2') : ''}
+                            ${hasTurn2 ? renderTurnSummaryCard(session.turn2, 'Secondo Turno', 'T2') : ''}
                         </div>
 
                         <h3 class="text-2xl font-bold mb-3 mt-8 text-white">Segnapunti Dettagliato</h3>
                         ${renderDetailedScoreGrid(session.turn1, 'Primo Turno')}
-                        ${session.turn2 ? renderDetailedScoreGrid(session.turn2, 'Secondo Turno') : ''}
+                        ${hasTurn2 ? renderDetailedScoreGrid(session.turn2, 'Secondo Turno') : ''}
                     </div>
 
                     <button class="btn-primary w-full p-3 rounded-lg mt-8" onclick="window.setView('dataSummary')">
@@ -1080,7 +1075,7 @@
             }
 
             function renderDetailedScoreGrid(turn, title) {
-                // CHIAVE: Deserializza la griglia qui
+                // Deserializza la griglia qui
                 const grid2D = deserializeGrid(turn); 
                 
                 // Ricalcola i volleys per la visualizzazione dettagliata
@@ -1113,7 +1108,7 @@
                                 </thead>
                                 <tbody>
                                     ${volleys.map((row, i) => `
-                                        <tr class="${i % 2 === 0 ? 'bg-secondary-dark' : 'bg-gray-800'} text-xs sm:text-sm">
+                                        <tr class="${i % 2 === 0 ? 'bg-secondary-dark' : 'bg-gray-800'} hover:bg-gray-700 text-xs sm:text-sm">
                                             <td class="font-bold">${row.volley}</td>
                                             ${row.scores.map(score => `<td>${score || ''}</td>`).join('')}
                                             <td class="font-bold text-white">${row.parziale}</td>
