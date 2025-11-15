@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Archery Tracker - Il Tuo Diario di Tiro</title>
-    <!-- Carica Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
@@ -65,7 +64,6 @@
             overflow-x: auto;
         }
     </style>
-    <!-- Configurazione per usare il font Inter con Tailwind -->
     <script>
         tailwind.config = {
             theme: {
@@ -91,24 +89,19 @@
             <p class="text-sm mt-1 text-primary-orange">Il tuo diario di allenamenti e gare</p>
         </header>
 
-        <!-- Contenitore per le viste dinamiche -->
         <div id="content-view">
-            <!-- Il contenuto viene iniettato qui da JavaScript -->
-        </div>
+            </div>
 
-        <!-- Modale/Popup per messaggi e riepiloghi -->
         <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
             <div id="modal-content" class="bg-secondary-dark p-6 rounded-xl shadow-2xl max-w-sm w-full border-2 border-primary-orange">
                 <h3 id="modal-title" class="text-2xl font-bold mb-4 text-white">Titolo</h3>
                 <p id="modal-body" class="mb-6 text-sm"></p>
                 <div id="modal-actions" class="flex justify-end space-x-3">
-                    <!-- Azioni dinamiche del modale -->
-                </div>
+                    </div>
             </div>
         </div>
     </div>
 
-    <!-- Firebase Imports -->
     <script type="module">
         // Importazioni AGGIORNATE alla versione 12.6.0
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
@@ -266,7 +259,7 @@
             function calculateVolley(volleyScores, cumulativeTotal) {
                 let parziale = 0;
                 let xCount = 0;
-                let tenCount = 0;
+                let tenCount = 0; // Contatore per i 10 esterni (non X)
                 let nineCount = 0;
 
                 for (const score of volleyScores) {
@@ -276,7 +269,12 @@
                     if (score === 'X') {
                         xCount++;
                     } else if (val === 10) {
-                        tenCount++;
+                        // Se il punteggio è 10, e NON è 'X', conta come 10 esterno.
+                        // La funzione getScoreValue restituisce 10 sia per 'X' che per '10'.
+                        // Usiamo 'score' per differenziare la stringa 'X' dalla stringa '10'.
+                        if (score === '10') {
+                            tenCount++;
+                        }
                     } else if (val === 9) {
                         nineCount++;
                     }
@@ -286,6 +284,7 @@
                     scores: volleyScores,
                     parziale: parziale,
                     totale: cumulativeTotal + parziale,
+                    // Modifica: Mostra il conteggio X e 10 esterni come richiesto (X-10)
                     X10: `${xCount}-${tenCount}`,
                     nine: nineCount,
                     x: xCount, // per il totale finale
@@ -323,15 +322,14 @@
                 }
 
                 const totalScore = cumulativeTotal;
-                const totalTensAndXs = totalX + totalTen;
-                const average = totalShots > 0 ? (totalScore / totalShots) : 0;
                 const totalFrecce = scoringState.rows * scoringState.cols;
                 const maxScore = totalFrecce * 10;
+                const average = totalShots > 0 ? (totalScore / totalShots) : 0;
                 
                 return {
                     score: totalScore,
-                    X: totalX,
-                    Ten: totalTen,
+                    X: totalX, // Totale X
+                    Ten: totalTen, // Totale 10 (non X)
                     Nine: totalNine,
                     average: average,
                     frecceTirate: totalShots,
@@ -503,16 +501,23 @@
                     const endTime = new Date();
                     appState.currentSession.endTime = getFormattedTime(endTime);
                     appState.currentSession.duration = calculateDuration(appState.currentSession.startTime, appState.currentSession.endTime);
-                    saveSessionToFirestore(); // Funzione finale di salvataggio
+                    
+                    // IL SALVATAGGIO SU FIREBASE AVVIENE QUI
+                    saveSessionToFirestore();
                     
                     modalBody += `<p class="mt-4 text-white">Sessione completata. Durata: ${durationToString(appState.currentSession.duration)}.</p>`;
                     actions.push({ text: "Torna al Menu", handler: () => window.setView('mainMenu') });
-                } else if (appState.currentTurn === 1 && format !== '6x12') {
-                    // Logica Primo Turno (non turno unico)
+                } else if (appState.currentTurn === 1 && format !== '72 frecce (6x12)') {
+                    // Logica Primo Turno (non turno unico: 30 o 36 frecce)
                     actions.push({ text: "Prosegui con Secondo Turno", handler: () => startNextTurn() });
                     actions.push({ text: "Fine Allenamento (Salva Turno Unico)", handler: () => window.saveTurn(true) });
                 } else {
-                    // Errore logico (non dovrebbe accadere se i controlli sono corretti)
+                    // Se siamo al Turno 2 o se il formato è 72 frecce (già completo), chiudiamo.
+                    const endTime = new Date();
+                    appState.currentSession.endTime = getFormattedTime(endTime);
+                    appState.currentSession.duration = calculateDuration(appState.currentSession.startTime, appState.currentSession.endTime);
+                    saveSessionToFirestore();
+                    modalBody += `<p class="mt-4 text-white">Sessione completata. Durata: ${durationToString(appState.currentSession.duration)}.</p>`;
                     actions.push({ text: "Torna al Menu", handler: () => window.setView('mainMenu') });
                 }
                 
@@ -650,7 +655,7 @@
 
                         <div class="mt-8 flex flex-col space-y-3">
                             <button type="submit" id="startTurnButton" class="btn-primary w-full p-3 rounded-lg text-lg">
-                                Primo Turno
+                                Inizia Primo Turno
                             </button>
                             <button type="button" class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="window.setView('mainMenu')">
                                 Torna Indietro
@@ -712,15 +717,14 @@
                 const turnKey = `turn${appState.currentTurn}`;
                 const format = scoringState.format;
                 
-                const gridData = appState.scoringGrid.map((row, rowIndex) => {
-                    return calculateVolley(row, rowIndex > 0 ? getVolleyTotal(rowIndex) : 0);
-                });
+                let cumulativeTotalForView = 0; // Inizializza il totale cumulativo per la visualizzazione
 
-                function getVolleyTotal(rowIndex) {
-                    if (rowIndex < 0) return 0;
-                    if (rowIndex === 0) return 0;
-                    return gridData.slice(0, rowIndex).reduce((acc, curr) => acc + curr.parziale, 0);
-                }
+                // Calcola sequenzialmente i dati della griglia per la visualizzazione
+                const gridData = appState.scoringGrid.map((row) => {
+                    const volleyResult = calculateVolley(row, cumulativeTotalForView);
+                    cumulativeTotalForView = volleyResult.totale; 
+                    return volleyResult;
+                });
 
                 // Genera l'HTML della griglia
                 const tableHtml = `
@@ -738,13 +742,11 @@
                             </thead>
                             <tbody>
                                 ${Array(scoringState.rows).fill(0).map((_, i) => {
-                                    const row = gridData[i];
-                                    const cumulativeTotal = getVolleyTotal(i);
+                                    const row = gridData[i]; // Utilizza il dato già calcolato
                                     const volleyNum = i + 1;
                                     const isComplete = appState.scoringGrid[i].every(s => s !== '' && s !== undefined);
 
-                                    // Ricalcola la riga per l'HTML
-                                    const calculatedRow = calculateVolley(appState.scoringGrid[i], cumulativeTotal);
+                                    // L'oggetto 'row' contiene i dati calcolati (parziale, totale, X10, nine)
                                     
                                     return `
                                         <tr id="volley-row-${volleyNum}" class="${i % 2 === 0 ? 'bg-secondary-dark' : 'bg-gray-800'} text-xs sm:text-base ${isComplete ? 'text-white' : 'text-primary-orange'}">
@@ -760,20 +762,20 @@
                                                     </td>
                                                 `;
                                             }).join('')}
-                                            <td class="font-bold text-white">${calculatedRow.parziale || ''}</td>
-                                            <td class="font-bold text-white">${calculatedRow.totale || ''}</td>
-                                            <td>${calculatedRow.X10 || ''}</td>
-                                            <td>${calculatedRow.nine || ''}</td>
+                                            <td class="font-bold text-white">${row.parziale || ''}</td>
+                                            <td class="font-bold text-white">${row.totale || ''}</td>
+                                            <td>${row.X10 || ''}</td>
+                                            <td>${row.nine || ''}</td>
                                         </tr>
                                     `;
                                 }).join('')}
-                                <!-- Riga Totale -->
                                 ${(() => {
                                     const totalResults = calculateTurnScores(appState.scoringGrid);
                                     return `
                                         <tr class="bg-primary-orange text-black font-extrabold text-xs sm:text-base">
-                                            <td colspan="${1 + scoringState.cols + 2}" class="text-right pr-4">Totale Punti (Parz. e Tot.)</td>
-                                            <td>${totalResults.X}</td>
+                                            <td colspan="${1 + scoringState.cols + 1}" class="text-right pr-4">Totale Turno (${session.type})</td>
+                                            <td class="font-extrabold">${totalResults.score}</td>
+                                            <td>${totalResults.X}-${totalResults.Ten}</td> 
                                             <td>${totalResults.Nine}</td>
                                         </tr>
                                     `;
@@ -799,6 +801,7 @@
                 `;
 
                 // Azioni
+                const sessionType = appState.sessionType; // Cache the value safely
                 const actionsHtml = `
                     <div class="mt-8 flex flex-col space-y-3">
                         ${(appState.currentTurn === 2 && format !== '6x12') || (format === '6x12' && appState.currentTurn === 1) ? `
@@ -811,7 +814,7 @@
                             </button>
                         `}
                         
-                        <button class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="window.setView('registrationForm', { type: appState.sessionType })">
+                        <button class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="window.setView('registrationForm', { type: '${sessionType}' })">
                             Torna Indietro
                         </button>
                     </div>
@@ -991,7 +994,6 @@
                     <p class="text-xl mb-6 text-primary-orange">Arciere: ${session.arciere} | ${session.distanza} | ${session.tipoTarga}</p>
 
                     <div class="space-y-6">
-                        <!-- Statistiche Principali -->
                         <div class="bg-secondary-dark p-4 rounded-xl shadow-lg border border-primary-orange">
                             <h3 class="text-2xl font-bold mb-3 text-white">Statistiche Generali</h3>
                             <div class="grid grid-cols-2 gap-4 text-sm">
@@ -1001,18 +1003,16 @@
                                 <div><strong>Media per Freccia:</strong> <span class="text-white font-extrabold">${session.totalAverage.toFixed(2)}</span></div>
                             </div>
                             <div class="mt-3 p-2 bg-gray-800 rounded-lg">
-                                <strong>Totali X/10/9:</strong> 
-                                X: ${session.totalX}, 10: ${session.totalTen}, 9: ${session.totalNine}
+                                <strong>Totali X-10/9:</strong> 
+                                <span class="text-white font-extrabold">${session.totalX}-${session.totalTen}</span> / 9: ${session.totalNine}
                             </div>
                         </div>
 
-                        <!-- Riepilogo Turni -->
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                             ${renderTurnSummaryCard(session.turn1, 'Primo Turno', 'T1')}
                             ${session.turn2 ? renderTurnSummaryCard(session.turn2, 'Secondo Turno', 'T2') : ''}
                         </div>
 
-                        <!-- Griglie Punteggio Dettagliate -->
                         <h3 class="text-2xl font-bold mb-3 mt-8 text-white">Segnapunti Dettagliato</h3>
                         ${renderDetailedScoreGrid(session.turn1, 'Primo Turno')}
                         ${session.turn2 ? renderDetailedScoreGrid(session.turn2, 'Secondo Turno') : ''}
@@ -1034,7 +1034,7 @@
                         <ul class="space-y-1 text-sm">
                             <li><strong>Punteggio:</strong> <span class="text-white font-extrabold">${summary.score}</span> / ${summary.maxScore}</li>
                             <li><strong>Media:</strong> ${summary.average.toFixed(2)}</li>
-                            <li><strong>X/10/9:</strong> X: ${summary.X}, 10: ${summary.Ten}, 9: ${summary.Nine}</li>
+                            <li><strong>X-10/9:</strong> X-10: <span class="text-white font-extrabold">${summary.X}-${summary.Ten}</span>, 9: ${summary.Nine}</li>
                         </ul>
                     </div>
                 `;
@@ -1073,10 +1073,10 @@
                                             <td>${row.nine}</td>
                                         </tr>
                                     `).join('')}
-                                    <!-- Riga Totale -->
                                     <tr class="bg-primary-orange text-black font-extrabold text-xs sm:text-sm">
-                                        <td colspan="${1 + numCols + 2}" class="text-right pr-4">Totale Punti (Parz. e Tot.)</td>
-                                        <td>${turn.summary.X}</td>
+                                        <td colspan="${1 + numCols + 1}" class="text-right pr-4">Totale Turno (${title})</td>
+                                        <td class="font-extrabold">${turn.summary.score}</td>
+                                        <td>${turn.summary.X}-${turn.summary.Ten}</td>
                                         <td>${turn.summary.Nine}</td>
                                     </tr>
                                 </tbody>
