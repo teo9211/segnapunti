@@ -270,7 +270,6 @@
                         xCount++;
                     } else if (val === 10) {
                         // Se il punteggio è 10, e NON è 'X', conta come 10 esterno.
-                        // La funzione getScoreValue restituisce 10 sia per 'X' che per '10'.
                         // Usiamo 'score' per differenziare la stringa 'X' dalla stringa '10'.
                         if (score === '10') {
                             tenCount++;
@@ -371,6 +370,10 @@
                 appState.view = viewName;
                 document.getElementById('content-view').innerHTML = '';
                 closeModal(); // Chiude eventuali modali aperte
+
+                if (unsubscribeSnapshot) {
+                    unsubscribeSnapshot(); // Scollega il listener quando si cambia vista
+                }
 
                 switch (viewName) {
                     case 'mainMenu':
@@ -545,7 +548,7 @@
                 return Math.round(diffMs / (1000 * 60)); // Durata in minuti
             }
 
-            // FUNZIONE AGGIUNTA/MODIFICATA PER RISOLVERE L'ERRORE 'NESTED ARRAYS'
+            // CORREZIONE 1: Aggiunta/Modifica della funzione prepareTurnData
             function prepareTurnData(turn) {
                 if (!turn || !turn.grid) return null;
                 
@@ -560,7 +563,7 @@
                 };
             }
 
-            // FUNZIONE MODIFICATA PER CHIAMARE LA FUNZIONE HELPER CORRETTA
+            // CORREZIONE 2: Modifica della funzione saveSessionToFirestore
             async function saveSessionToFirestore() {
                 try {
                     const session = appState.currentSession;
@@ -594,9 +597,13 @@
                 }
             }
 
+            // CORREZIONE 3: Modifica per gestire i valori undefined nel Turno 2
             function calculateTotalSessionResults(session) {
-                const turn1Summary = session.turn1?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0 };
-                const turn2Summary = session.turn2?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0 };
+                // Inizializza il riepilogo del Turno 1 (dovrebbe sempre esistere se arriviamo qui)
+                const turn1Summary = session.turn1?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0, average: 0 };
+                
+                // Inizializza il riepilogo del Turno 2. Se non esiste, usiamo un oggetto con tutti i valori a 0.
+                const turn2Summary = session.turn2?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0, average: 0 };
                 
                 const totalScore = turn1Summary.score + turn2Summary.score;
                 const totalShots = turn1Summary.frecceTirate + turn2Summary.frecceTirate;
@@ -607,10 +614,13 @@
                     totalTen: turn1Summary.Ten + turn2Summary.Ten,
                     totalNine: turn1Summary.Nine + turn2Summary.Nine,
                     totalAverage: totalShots > 0 ? (totalScore / totalShots) : 0,
+                    
                     turn1Score: turn1Summary.score,
                     turn1Average: turn1Summary.average,
+                    
+                    // Questi valori saranno 0 se il Turno 2 non è stato completato
                     turn2Score: turn2Summary.score,
-                    turn2Average: turn2Summary.average,
+                    turn2Average: turn2Summary.average, 
                 };
             }
 
@@ -647,7 +657,7 @@
 
                 const formFields = [
                     { id: 'arciere', label: 'Arciere', type: 'text', required: true, value: session.arciere || '', placeholder: 'Nome Arciere' },
-                    { id: 'data', label: 'Data', type: 'date', required: true, value: session.date || today },
+                    { id: 'data', label: 'Data', type: 'date', required: true, value: session.data || today }, // USIAMO data
                     { id: 'ora', label: 'Ora', type: 'time', required: true, value: session.startTime || defaultTime, placeholder: 'HH:MM' },
                     { id: 'luogo', label: 'Luogo', type: 'text', required: true, value: session.luogo || '', placeholder: 'Nome Luogo' },
                     { id: 'tipoLuogo', label: 'Tipo Luogo', type: 'select', options: TIPO_LUOGO_OPTIONS, required: true, value: session.tipoLuogo || '' },
@@ -893,7 +903,7 @@
                     });
                     
                     // Ordina i dati in memoria per data (crescente)
-                    sessions.sort((a, b) => new Date(a.date) - new Date(b.date));
+                    sessions.sort((a, b) => new Date(a.data) - new Date(b.data)); // USIAMO a.data e b.data
 
                     // Filtra per arciere in memoria
                     let filteredSessions = sessions;
@@ -978,8 +988,7 @@
                             ` : appState.sessionData.map(session => `
                                 <tr class="${session.type === 'Gara' ? 'bg-orange-900 bg-opacity-30' : 'bg-gray-800'} hover:bg-secondary-dark cursor-pointer text-xs sm:text-sm"
                                     onclick="window.setView('detailedSummary', { session: ${JSON.stringify(session).replace(/'/g, '&#39;')} })">
-                                    <td class="font-bold text-primary-orange underline">${session.date}</td>
-                                    <td>${session.arciere}</td>
+                                    <td class="font-bold text-primary-orange underline">${session.data || 'N/D'}</td> <td>${session.arciere}</td>
                                     <td>${session.type}</td>
                                     <td class="font-extrabold text-white">${session.totalScore || 0}</td>
                                     <td>${session.turn1Score || 0}</td>
@@ -1013,8 +1022,7 @@
                 const T2 = session.turn2?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, average: 0 };
                 
                 const html = `
-                    <h2 class="text-3xl font-bold mb-4 text-white">${session.type} del ${session.date}</h2>
-                    <p class="text-xl mb-6 text-primary-orange">Arciere: ${session.arciere} | ${session.distanza} | ${session.tipoTarga}</p>
+                    <h2 class="text-3xl font-bold mb-4 text-white">${session.type} del ${session.data || 'N/D'}</h2> <p class="text-xl mb-6 text-primary-orange">Arciere: ${session.arciere} | ${session.distanza} | ${session.tipoTarga}</p>
 
                     <div class="space-y-6">
                         <div class="bg-secondary-dark p-4 rounded-xl shadow-lg border border-primary-orange">
