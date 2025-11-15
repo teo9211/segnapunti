@@ -501,7 +501,9 @@
                     const endTime = new Date();
                     appState.currentSession.endTime = getFormattedTime(endTime);
                     appState.currentSession.duration = calculateDuration(appState.currentSession.startTime, appState.currentSession.endTime);
-                    saveSessionToFirestore(); // Funzione finale di salvataggio
+                    
+                    // IL SALVATAGGIO SU FIREBASE AVVIENE QUI
+                    saveSessionToFirestore();
                     
                     modalBody += `<p class="mt-4 text-white">Sessione completata. Durata: ${durationToString(appState.currentSession.duration)}.</p>`;
                     actions.push({ text: "Torna al Menu", handler: () => window.setView('mainMenu') });
@@ -543,66 +545,54 @@
                 return Math.round(diffMs / (1000 * 60)); // Durata in minuti
             }
 
+            // FUNZIONE AGGIUNTA/MODIFICATA PER RISOLVERE L'ERRORE 'NESTED ARRAYS'
+            function prepareTurnData(turn) {
+                if (!turn || !turn.grid) return null;
+                
+                // CONVERSIONE CHIAVE: Serializza la griglia 2D (Array annidato)
+                // in un array di stringhe JSON, una per ogni riga (volè).
+                const serializedGrid = turn.grid.map(row => JSON.stringify(row));
 
-async function saveSessionToFirestore() {
-    try {
-        const session = appState.currentSession;
-        const results = calculateTotalSessionResults(session);
+                return {
+                    summary: turn.summary,
+                    // Salva la griglia in formato supportato (array di stringhe)
+                    grid: serializedGrid
+                };
+            }
 
-        // Funzione helper per preparare i dati del turno
-        const prepareTurnData = (turn) => {
-            if (!turn || !turn.grid) return null;
-            
-            // CONVERSIONE CHIAVE: Converti la griglia 2D (Array annidato)
-            // in un array di stringhe JSON, una per ogni riga (volè).
-            const serializedGrid = turn.grid.map(row => JSON.stringify(row));
+            // FUNZIONE MODIFICATA PER CHIAMARE LA FUNZIONE HELPER CORRETTA
+            async function saveSessionToFirestore() {
+                try {
+                    const session = appState.currentSession;
+                    const results = calculateTotalSessionResults(session);
 
-            return {
-                summary: turn.summary,
-                // Salva la griglia in formato supportato (array di stringhe)
-                grid: serializedGrid
-            };
-        };
+                    // Prepara i dati del turno 1 serializzando la griglia
+                    const turn1Data = prepareTurnData(session.turn1);
+                    
+                    // Prepara i dati del turno 2 serializzando la griglia (se esiste)
+                    const turn2Data = session.turn2 ? prepareTurnData(session.turn2) : null;
+                    
+                    const finalSessionData = {
+                        ...session,
+                        ...results,
+                        timestamp: serverTimestamp(),
+                        userId: appState.userId,
+                        turn1: turn1Data, // Dati serializzati
+                        turn2: turn2Data, // Dati serializzati o null
+                    };
 
-        const finalSession = {
-            ...session,
-            ...results,
-            timestamp: serverTimestamp(),
-            userId: appState.userId,
-            // Modifica: Inserisci il dato preparato per i turni
-            turn1: prepareTurnData(session.turn1),
-            turn2: prepareData(session.turn2), // Assicurati che 'prepareData' gestisca l'assenza di turn2
-        };
-        
-        // Rimuovi le proprietà non necessarie o obsolete dalla copia (se ce ne sono)
-        delete finalSession.turn1.grid; // Evitiamo doppi salvataggi non validi
-        if (finalSession.turn2) delete finalSession.turn2.grid;
+                    const docRef = await addDoc(window.getSessionsCollectionRef(), finalSessionData);
+                    console.log("Documento scritto con ID: ", docRef.id);
+                    
+                    // Resetta lo stato dopo il salvataggio
+                    appState.currentSession = null;
+                    appState.currentTurn = 1;
 
-        // Correzione: La funzione prepareTurnData gestisce la serializzazione
-        const turn1Data = prepareTurnData(session.turn1);
-        const turn2Data = session.turn2 ? prepareTurnData(session.turn2) : null;
-        
-        const finalSessionData = {
-            ...session,
-            ...results,
-            timestamp: serverTimestamp(),
-            userId: appState.userId,
-            turn1: turn1Data,
-            turn2: turn2Data,
-        };
-
-        const docRef = await addDoc(window.getSessionsCollectionRef(), finalSessionData);
-        console.log("Documento scritto con ID: ", docRef.id);
-        
-        // Resetta lo stato dopo il salvataggio
-        appState.currentSession = null;
-        appState.currentTurn = 1;
-
-    } catch (e) {
-        console.error("Errore nell'aggiunta del documento: ", e);
-        showModal("Errore di Salvataggio", "Non è stato possibile salvare la sessione. Controlla la console per i dettagli.", [{ text: "Ok", handler: () => {} }]);
-    }
-}
+                } catch (e) {
+                    console.error("Errore nell'aggiunta del documento: ", e);
+                    showModal("Errore di Salvataggio", "Non è stato possibile salvare la sessione. Controlla la console per i dettagli.", [{ text: "Ok", handler: () => {} }]);
+                }
+            }
 
             function calculateTotalSessionResults(session) {
                 const turn1Summary = session.turn1?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0 };
@@ -834,6 +824,7 @@ async function saveSessionToFirestore() {
                 `;
 
                 // Azioni
+                const sessionType = appState.sessionType; // Cache the value safely
                 const actionsHtml = `
                     <div class="mt-8 flex flex-col space-y-3">
                         ${(appState.currentTurn === 2 && format !== '6x12') || (format === '6x12' && appState.currentTurn === 1) ? `
@@ -846,7 +837,7 @@ async function saveSessionToFirestore() {
                             </button>
                         `}
                         
-                        <button class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="window.setView('registrationForm', { type: appState.sessionType })">
+                        <button class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="window.setView('registrationForm', { type: '${sessionType}' })">
                             Torna Indietro
                         </button>
                     </div>
@@ -1072,72 +1063,70 @@ async function saveSessionToFirestore() {
                 `;
             }
 
-// Aggiungi una funzione helper per deserializzare la griglia
-function deserializeGrid(turn) {
-    if (!turn || !turn.grid || turn.grid.length === 0) return [];
-    
-    // Converti l'array di stringhe JSON in un array 2D di punteggi
-    // (turn.grid è ora un array di stringhe, ciascuna stringa è una volè JSON)
-    return turn.grid.map(rowStr => JSON.parse(rowStr));
-}
+            // FUNZIONE AGGIUNTA/MODIFICATA PER LA LETTURA DEL DATO SERIALIZZATO
+            function deserializeGrid(turn) {
+                if (!turn || !turn.grid || turn.grid.length === 0) return [];
+                
+                // Converti l'array di stringhe JSON in un array 2D di punteggi
+                return turn.grid.map(rowStr => JSON.parse(rowStr));
+            }
 
+            function renderDetailedScoreGrid(turn, title) {
+                // CHIAVE: Deserializza la griglia qui
+                const grid2D = deserializeGrid(turn); 
+                
+                // Ricalcola i volleys per la visualizzazione dettagliata
+                let cumulativeTotalForView = 0;
+                const volleys = grid2D.map(row => {
+                    const volleyResult = calculateVolley(row, cumulativeTotalForView);
+                    cumulativeTotalForView = volleyResult.totale; 
+                    return volleyResult;
+                });
 
-function renderDetailedScoreGrid(turn, title) {
-    // CHIAVE: Deserializza la griglia qui
-    const grid2D = deserializeGrid(turn); 
-    
-    // Ricalcola i volleys per la visualizzazione dettagliata
-    let cumulativeTotalForView = 0;
-    const volleys = grid2D.map(row => {
-        const volleyResult = calculateVolley(row, cumulativeTotalForView);
-        cumulativeTotalForView = volleyResult.totale; 
-        return volleyResult;
-    });
+                if (!volleys || volleys.length === 0) return '';
+                
+                // Determina il numero di colonne frecce
+                const numCols = volleys[0].scores.length;
 
-    if (!volleys || volleys.length === 0) return '';
-    
-    // Determina il numero di colonne frecce
-    const numCols = volleys[0].scores.length;
-
-    const tableHtml = `
-        <div class="mt-4">
-            <h4 class="text-lg font-bold mb-2 text-primary-orange">${title}</h4>
-            <div class="grid-wrapper">
-                <table class="score-grid w-full table-auto min-w-[500px] border-collapse">
-                    <thead>
-                        <tr class="text-xs sm:text-sm">
-                            <th class="w-[10%]">Volè</th>
-                            ${Array(numCols).fill(0).map((_, i) => `<th class="w-[8%]">${i + 1}</th>`).join('')}
-                            <th class="w-[10%]">Parz.</th>
-                            <th class="w-[10%]">Tot.</th>
-                            <th class="w-[12%]">X-10</th>
-                            <th class="w-[8%]">9</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${volleys.map((row, i) => `
-                            <tr class="${i % 2 === 0 ? 'bg-secondary-dark' : 'bg-gray-800'} text-xs sm:text-sm">
-                                <td class="font-bold">${row.volley}</td>
-                                ${row.scores.map(score => `<td>${score || ''}</td>`).join('')}
-                                <td class="font-bold text-white">${row.parziale}</td>
-                                <td class="font-bold text-white">${row.totale}</td>
-                                <td>${row.X10}</td>
-                                <td>${row.nine}</td>
-                            </tr>
-                        `).join('')}
-                        <tr class="bg-primary-orange text-black font-extrabold text-xs sm:text-sm">
-                            <td colspan="${1 + numCols + 1}" class="text-right pr-4">Totale Turno (${title})</td>
-                            <td class="font-extrabold">${turn.summary.score}</td>
-                            <td>${turn.summary.X}-${turn.summary.Ten}</td>
-                            <td>${turn.summary.Nine}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    `;
-    return tableHtml;
-}
+                const tableHtml = `
+                    <div class="mt-4">
+                        <h4 class="text-lg font-bold mb-2 text-primary-orange">${title}</h4>
+                        <div class="grid-wrapper">
+                            <table class="score-grid w-full table-auto min-w-[500px] border-collapse">
+                                <thead>
+                                    <tr class="text-xs sm:text-sm">
+                                        <th class="w-[10%]">Volè</th>
+                                        ${Array(numCols).fill(0).map((_, i) => `<th class="w-[8%]">${i + 1}</th>`).join('')}
+                                        <th class="w-[10%]">Parz.</th>
+                                        <th class="w-[10%]">Tot.</th>
+                                        <th class="w-[12%]">X-10</th>
+                                        <th class="w-[8%]">9</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${volleys.map((row, i) => `
+                                        <tr class="${i % 2 === 0 ? 'bg-secondary-dark' : 'bg-gray-800'} text-xs sm:text-sm">
+                                            <td class="font-bold">${row.volley}</td>
+                                            ${row.scores.map(score => `<td>${score || ''}</td>`).join('')}
+                                            <td class="font-bold text-white">${row.parziale}</td>
+                                            <td class="font-bold text-white">${row.totale}</td>
+                                            <td>${row.X10}</td>
+                                            <td>${row.nine}</td>
+                                        </tr>
+                                    `).join('')}
+                                    <tr class="bg-primary-orange text-black font-extrabold text-xs sm:text-sm">
+                                        <td colspan="${1 + numCols + 1}" class="text-right pr-4">Totale Turno (${title})</td>
+                                        <td class="font-extrabold">${turn.summary.score}</td>
+                                        <td>${turn.summary.X}-${turn.summary.Ten}</td>
+                                        <td>${turn.summary.Nine}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                return tableHtml;
+            }
 
             // Inizializza l'applicazione al caricamento dell'autenticazione
             window.setView('mainMenu');
