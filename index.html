@@ -110,15 +110,30 @@
 
     <!-- Firebase Imports -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, orderBy, limit, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // Importazioni AGGIORNATE alla versione 12.6.0
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, orderBy, limit, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-firestore.js";
 
         // Variabili globali fornite dall'ambiente Canvas
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-archery-tracker-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* Placeholder config for local testing */ };
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // Configurazione di default, usata se __firebase_config non è disponibile (ad esempio, per test locali)
+        // ORA USA LA TUA CONFIGURAZIONE FORNITA (segnapunti-29e7d)
+        const rawFirebaseConfig = {
+            apiKey: "AIzaSyBXBhK1WL8781xQ0iGoSkbEK6rCNAg8-UA",
+            authDomain: "segnapunti-29e7d.firebaseapp.com",
+            projectId: "segnapunti-29e7d",
+            storageBucket: "segnapunti-29e7d.firebasestorage.app",
+            messagingSenderId: "804710490002",
+            appId: "1:804710490002:web:0d93df922327b04d3d6b4b"
+        };
+        
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : rawFirebaseConfig;
         
         // Inizializzazione Firebase
         let app, db, auth;
