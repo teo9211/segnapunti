@@ -341,10 +341,35 @@
             }
 
             // =================================================================================
-            // GESTIONE VISTE E UI
+            // GESTIONE VISTE E UI - ESPONIAMO QUESTE FUNZIONI GLOBALMENTE
             // =================================================================================
 
-            function setView(viewName, data = {}) {
+            function showModal(title, body, actions = []) {
+                document.getElementById('modal-title').textContent = title;
+                document.getElementById('modal-body').innerHTML = body;
+                
+                const actionsContainer = document.getElementById('modal-actions');
+                actionsContainer.innerHTML = '';
+                actions.forEach(action => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn-primary px-4 py-2 rounded-lg font-semibold';
+                    btn.textContent = action.text;
+                    btn.onclick = () => {
+                        action.handler();
+                        closeModal();
+                    };
+                    actionsContainer.appendChild(btn);
+                });
+
+                document.getElementById('modal').classList.remove('hidden');
+            }
+
+            function closeModal() {
+                document.getElementById('modal').classList.add('hidden');
+            }
+
+            // **FUNZIONE GLOBALE:** Spostata fuori ma chiamata qui
+            window.setView = (viewName, data = {}) => {
                 appState.view = viewName;
                 document.getElementById('content-view').innerHTML = '';
                 closeModal(); // Chiude eventuali modali aperte
@@ -372,30 +397,193 @@
                         renderChartsView();
                         break;
                 }
-            }
+            };
+            
+            // **FUNZIONE GLOBALE:** Spostata fuori ma chiamata qui
+            window.handleFilterChange = (field, value) => {
+                filterState[field] = value;
+                fetchSessions(); // Riesegue la query con i nuovi filtri
+            };
 
-            function showModal(title, body, actions = []) {
-                document.getElementById('modal-title').textContent = title;
-                document.getElementById('modal-body').innerHTML = body;
+            // **FUNZIONE GLOBALE:** Spostata fuori ma chiamata qui
+            window.handleCellClick = (row, col) => {
+                scoringState.activeCell = { row, col };
+                renderScoringView(); // Ridisegna per evidenziare la nuova cella attiva
+            };
+
+            // **FUNZIONE GLOBALE:** Spostata fuori ma chiamata qui
+            window.handleKeypadInput = (value) => {
+                const { row, col } = scoringState.activeCell;
+                const rowIndex = row - 1;
+                const colIndex = col - 1;
+
+                // Controlli di validità
+                if (rowIndex < 0 || rowIndex >= scoringState.rows) return;
                 
-                const actionsContainer = document.getElementById('modal-actions');
-                actionsContainer.innerHTML = '';
-                actions.forEach(action => {
-                    const btn = document.createElement('button');
-                    btn.className = 'btn-primary px-4 py-2 rounded-lg font-semibold';
-                    btn.textContent = action.text;
-                    btn.onclick = () => {
-                        action.handler();
-                        closeModal();
-                    };
-                    actionsContainer.appendChild(btn);
-                });
+                // Gestione CANC
+                if (value === 'CANC') {
+                    if (appState.scoringGrid[rowIndex][colIndex] !== '') {
+                        appState.scoringGrid[rowIndex][colIndex] = ''; // Cancella
+                    } else {
+                        // Se la cella è vuota, torna indietro alla precedente
+                        let newCol = colIndex - 1;
+                        let newRow = rowIndex;
+                        if (newCol < 0) {
+                            newRow = rowIndex - 1;
+                            newCol = scoringState.cols - 1;
+                        }
+                        if (newRow >= 0) {
+                            scoringState.activeCell = { row: newRow + 1, col: newCol + 1 };
+                        }
+                        appState.scoringGrid[rowIndex][colIndex] = '';
+                    }
+                } else {
+                    // Gestione Inserimento Punteggio
+                    const scoreValue = (value === '10' ? '10' : value).toUpperCase();
+                    appState.scoringGrid[rowIndex][colIndex] = scoreValue;
 
-                document.getElementById('modal').classList.remove('hidden');
+                    // Avanza alla prossima cella
+                    let newCol = colIndex + 1;
+                    let newRow = rowIndex;
+
+                    if (newCol >= scoringState.cols) {
+                        newCol = 0; // Inizia dalla prima colonna
+                        newRow = rowIndex + 1; // Prossima riga
+                    }
+
+                    if (newRow < scoringState.rows) {
+                        scoringState.activeCell = { row: newRow + 1, col: newCol + 1 };
+                    } else {
+                        // Fine della griglia, sposta il focus all'ultima cella riempita
+                        scoringState.activeCell = { row: scoringState.rows, col: scoringState.cols };
+                    }
+                }
+                renderScoringView();
+            };
+
+            // **FUNZIONE GLOBALE:** Spostata fuori ma chiamata qui
+            window.saveTurn = (isFinal) => {
+                const turnKey = `turn${appState.currentTurn}`;
+                const turnResults = calculateTurnScores(appState.scoringGrid);
+
+                // Controllo che il turno sia completo (almeno un punteggio in tutte le volè)
+                if (turnResults.frecceTirate !== (scoringState.rows * scoringState.cols)) {
+                    // Avvisa che non tutte le frecce sono state tirate
+                    showModal("Turno Incompleto", "Non tutte le volè hanno il numero massimo di frecce inserite. Si desidera salvare comunque?", [
+                        { text: "Annulla", handler: () => {} },
+                        { text: "Salva Incompleto", handler: () => confirmSave(isFinal, turnKey, turnResults) }
+                    ]);
+                } else {
+                    confirmSave(isFinal, turnKey, turnResults);
+                }
+            };
+            
+            // Funzioni helper interne
+            function confirmSave(isFinal, turnKey, turnResults) {
+                // 1. Salva i risultati del turno nello stato
+                appState.currentSession[turnKey].summary = turnResults;
+                
+                let modalBody = `
+                    <p class="text-lg font-bold mb-3 text-white">Riepilogo Turno ${appState.currentTurn}</p>
+                    <ul class="space-y-1 text-sm">
+                        <li><strong>Punteggio Totale:</strong> <span class="text-primary-orange font-bold">${turnResults.score}</span> / ${turnResults.maxScore}</li>
+                        <li><strong>Media per freccia:</strong> <span class="text-primary-orange font-bold">${turnResults.average.toFixed(2)}</span></li>
+                        <li><strong>X Totali:</strong> ${turnResults.X}</li>
+                        <li><strong>10 Totali:</strong> ${turnResults.Ten}</li>
+                        <li><strong>9 Totali:</strong> ${turnResults.Nine}</li>
+                    </ul>
+                `;
+
+                // 2. Determina le azioni successive
+                let actions = [];
+                const format = appState.currentSession.formatoGara;
+
+                if (isFinal) {
+                    // Logica FINE ALLENAMENTO/GARA
+                    const endTime = new Date();
+                    appState.currentSession.endTime = getFormattedTime(endTime);
+                    appState.currentSession.duration = calculateDuration(appState.currentSession.startTime, appState.currentSession.endTime);
+                    saveSessionToFirestore(); // Funzione finale di salvataggio
+                    
+                    modalBody += `<p class="mt-4 text-white">Sessione completata. Durata: ${durationToString(appState.currentSession.duration)}.</p>`;
+                    actions.push({ text: "Torna al Menu", handler: () => window.setView('mainMenu') });
+                } else if (appState.currentTurn === 1 && format !== '6x12') {
+                    // Logica Primo Turno (non turno unico)
+                    actions.push({ text: "Prosegui con Secondo Turno", handler: () => startNextTurn() });
+                    actions.push({ text: "Fine Allenamento (Salva Turno Unico)", handler: () => window.saveTurn(true) });
+                } else {
+                    // Errore logico (non dovrebbe accadere se i controlli sono corretti)
+                    actions.push({ text: "Torna al Menu", handler: () => window.setView('mainMenu') });
+                }
+                
+                showModal("Turno Salvato!", modalBody, actions);
             }
 
-            function closeModal() {
-                document.getElementById('modal').classList.add('hidden');
+            function startNextTurn() {
+                if (appState.currentTurn === 1) {
+                    appState.currentTurn = 2;
+                }
+                window.setView('scoring');
+            }
+
+            function calculateDuration(startTimeStr, endTimeStr) {
+                const date = new Date().toISOString().split('T')[0];
+                const start = new Date(`${date}T${startTimeStr}`);
+                const end = new Date(`${date}T${endTimeStr}`);
+                
+                // Se l'ora di fine è prima dell'ora di inizio (es. sessione oltre mezzanotte, improbabile)
+                if (end < start) {
+                    end.setDate(end.getDate() + 1);
+                }
+                
+                const diffMs = end - start;
+                return Math.round(diffMs / (1000 * 60)); // Durata in minuti
+            }
+
+
+            async function saveSessionToFirestore() {
+                try {
+                    const session = appState.currentSession;
+                    const results = calculateTotalSessionResults(session);
+
+                    const finalSession = {
+                        ...session,
+                        ...results,
+                        timestamp: serverTimestamp(),
+                        userId: appState.userId,
+                    };
+
+                    const docRef = await addDoc(window.getSessionsCollectionRef(), finalSession);
+                    console.log("Documento scritto con ID: ", docRef.id);
+                    
+                    // Resetta lo stato dopo il salvataggio
+                    appState.currentSession = null;
+                    appState.currentTurn = 1;
+
+                } catch (e) {
+                    console.error("Errore nell'aggiunta del documento: ", e);
+                    showModal("Errore di Salvataggio", "Non è stato possibile salvare la sessione. Controlla la console per i dettagli.", [{ text: "Ok", handler: () => {} }]);
+                }
+            }
+
+            function calculateTotalSessionResults(session) {
+                const turn1Summary = session.turn1?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0 };
+                const turn2Summary = session.turn2?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0 };
+                
+                const totalScore = turn1Summary.score + turn2Summary.score;
+                const totalShots = turn1Summary.frecceTirate + turn2Summary.frecceTirate;
+
+                return {
+                    totalScore: totalScore,
+                    totalX: turn1Summary.X + turn2Summary.X,
+                    totalTen: turn1Summary.Ten + turn2Summary.Ten,
+                    totalNine: turn1Summary.Nine + turn2Summary.Nine,
+                    totalAverage: totalShots > 0 ? (totalScore / totalShots) : 0,
+                    turn1Score: turn1Summary.score,
+                    turn1Average: turn1Summary.average,
+                    turn2Score: turn2Summary.score,
+                    turn2Average: turn2Summary.average,
+                };
             }
 
             // =================================================================================
@@ -406,9 +594,9 @@
                 const html = `
                     <div class="text-center space-y-4">
                         <h2 class="text-2xl font-bold mb-6 text-white">Seleziona un'azione</h2>
-                        <button class="btn-primary w-full p-4 rounded-xl shadow-lg" onclick="setView('registrationForm', { type: 'Allenamento' })">Allenamento</button>
-                        <button class="btn-primary w-full p-4 rounded-xl shadow-lg" onclick="setView('registrationForm', { type: 'Gara' })">Gara</button>
-                        <button class="btn-primary w-full p-4 rounded-xl shadow-lg" onclick="setView('dataSummary')">Riepilogo Dati</button>
+                        <button class="btn-primary w-full p-4 rounded-xl shadow-lg" onclick="window.setView('registrationForm', { type: 'Allenamento' })">Allenamento</button>
+                        <button class="btn-primary w-full p-4 rounded-xl shadow-lg" onclick="window.setView('registrationForm', { type: 'Gara' })">Gara</button>
+                        <button class="btn-primary w-full p-4 rounded-xl shadow-lg" onclick="window.setView('dataSummary')">Riepilogo Dati</button>
                         <button class="btn-primary w-full p-4 rounded-xl shadow-lg opacity-50 cursor-not-allowed">Grafici Andamento (Prossimamente)</button>
                     </div>
                 `;
@@ -464,7 +652,7 @@
                             <button type="submit" id="startTurnButton" class="btn-primary w-full p-3 rounded-lg text-lg">
                                 Primo Turno
                             </button>
-                            <button type="button" class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="setView('mainMenu')">
+                            <button type="button" class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="window.setView('mainMenu')">
                                 Torna Indietro
                             </button>
                         </div>
@@ -482,7 +670,7 @@
                     session.id = Date.now(); // ID temporaneo per la sessione corrente
                     appState.currentSession = session;
 
-                    setView('scoring');
+                    window.setView('scoring');
                 });
             }
 
@@ -623,7 +811,7 @@
                             </button>
                         `}
                         
-                        <button class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="setView('registrationForm', { type: appState.sessionType })">
+                        <button class="btn-primary w-full p-3 rounded-lg bg-secondary-dark text-primary-orange border border-primary-orange" onclick="window.setView('registrationForm', { type: appState.sessionType })">
                             Torna Indietro
                         </button>
                     </div>
@@ -636,184 +824,6 @@
                     ${keypadHtml}
                     ${actionsHtml}
                 `;
-            }
-
-            // Funzioni di gestione input (esposte globalmente per l'onclick)
-            window.handleCellClick = (row, col) => {
-                scoringState.activeCell = { row, col };
-                renderScoringView(); // Ridisegna per evidenziare la nuova cella attiva
-            };
-
-            window.handleKeypadInput = (value) => {
-                const { row, col } = scoringState.activeCell;
-                const rowIndex = row - 1;
-                const colIndex = col - 1;
-
-                // Controlli di validità
-                if (rowIndex < 0 || rowIndex >= scoringState.rows) return;
-                
-                // Gestione CANC
-                if (value === 'CANC') {
-                    if (appState.scoringGrid[rowIndex][colIndex] !== '') {
-                        appState.scoringGrid[rowIndex][colIndex] = ''; // Cancella
-                    } else {
-                        // Se la cella è vuota, torna indietro alla precedente
-                        let newCol = colIndex - 1;
-                        let newRow = rowIndex;
-                        if (newCol < 0) {
-                            newRow = rowIndex - 1;
-                            newCol = scoringState.cols - 1;
-                        }
-                        if (newRow >= 0) {
-                            scoringState.activeCell = { row: newRow + 1, col: newCol + 1 };
-                        }
-                        appState.scoringGrid[rowIndex][colIndex] = '';
-                    }
-                } else {
-                    // Gestione Inserimento Punteggio
-                    const scoreValue = (value === '10' ? '10' : value).toUpperCase();
-                    appState.scoringGrid[rowIndex][colIndex] = scoreValue;
-
-                    // Avanza alla prossima cella
-                    let newCol = colIndex + 1;
-                    let newRow = rowIndex;
-
-                    if (newCol >= scoringState.cols) {
-                        newCol = 0; // Inizia dalla prima colonna
-                        newRow = rowIndex + 1; // Prossima riga
-                    }
-
-                    if (newRow < scoringState.rows) {
-                        scoringState.activeCell = { row: newRow + 1, col: newCol + 1 };
-                    } else {
-                        // Fine della griglia, sposta il focus all'ultima cella riempita
-                        scoringState.activeCell = { row: scoringState.rows, col: scoringState.cols };
-                    }
-                }
-                renderScoringView();
-            };
-
-            window.saveTurn = (isFinal) => {
-                const turnKey = `turn${appState.currentTurn}`;
-                const turnResults = calculateTurnScores(appState.scoringGrid);
-
-                // Controllo che il turno sia completo (almeno un punteggio in tutte le volè)
-                if (turnResults.frecceTirate !== (scoringState.rows * scoringState.cols)) {
-                    // Avvisa che non tutte le frecce sono state tirate
-                    showModal("Turno Incompleto", "Non tutte le volè hanno il numero massimo di frecce inserite. Si desidera salvare comunque?", [
-                        { text: "Annulla", handler: () => {} },
-                        { text: "Salva Incompleto", handler: () => confirmSave(isFinal, turnKey, turnResults) }
-                    ]);
-                } else {
-                    confirmSave(isFinal, turnKey, turnResults);
-                }
-            };
-
-            function confirmSave(isFinal, turnKey, turnResults) {
-                // 1. Salva i risultati del turno nello stato
-                appState.currentSession[turnKey].summary = turnResults;
-                
-                let modalBody = `
-                    <p class="text-lg font-bold mb-3 text-white">Riepilogo Turno ${appState.currentTurn}</p>
-                    <ul class="space-y-1 text-sm">
-                        <li><strong>Punteggio Totale:</strong> <span class="text-primary-orange font-bold">${turnResults.score}</span> / ${turnResults.maxScore}</li>
-                        <li><strong>Media per freccia:</strong> <span class="text-primary-orange font-bold">${turnResults.average.toFixed(2)}</span></li>
-                        <li><strong>X Totali:</strong> ${turnResults.X}</li>
-                        <li><strong>10 Totali:</strong> ${turnResults.Ten}</li>
-                        <li><strong>9 Totali:</strong> ${turnResults.Nine}</li>
-                    </ul>
-                `;
-
-                // 2. Determina le azioni successive
-                let actions = [];
-                const format = appState.currentSession.formatoGara;
-
-                if (isFinal) {
-                    // Logica FINE ALLENAMENTO/GARA
-                    const endTime = new Date();
-                    appState.currentSession.endTime = getFormattedTime(endTime);
-                    appState.currentSession.duration = calculateDuration(appState.currentSession.startTime, appState.currentSession.endTime);
-                    saveSessionToFirestore(); // Funzione finale di salvataggio
-                    
-                    modalBody += `<p class="mt-4 text-white">Sessione completata. Durata: ${durationToString(appState.currentSession.duration)}.</p>`;
-                    actions.push({ text: "Torna al Menu", handler: () => setView('mainMenu') });
-                } else if (appState.currentTurn === 1 && format !== '6x12') {
-                    // Logica Primo Turno (non turno unico)
-                    actions.push({ text: "Prosegui con Secondo Turno", handler: () => startNextTurn() });
-                    actions.push({ text: "Fine Allenamento (Salva Turno Unico)", handler: () => window.saveTurn(true) });
-                } else {
-                    // Errore logico (non dovrebbe accadere se i controlli sono corretti)
-                    actions.push({ text: "Torna al Menu", handler: () => setView('mainMenu') });
-                }
-                
-                showModal("Turno Salvato!", modalBody, actions);
-            }
-
-            function startNextTurn() {
-                if (appState.currentTurn === 1) {
-                    appState.currentTurn = 2;
-                }
-                setView('scoring');
-            }
-
-            function calculateDuration(startTimeStr, endTimeStr) {
-                const date = new Date().toISOString().split('T')[0];
-                const start = new Date(`${date}T${startTimeStr}`);
-                const end = new Date(`${date}T${endTimeStr}`);
-                
-                // Se l'ora di fine è prima dell'ora di inizio (es. sessione oltre mezzanotte, improbabile)
-                if (end < start) {
-                    end.setDate(end.getDate() + 1);
-                }
-                
-                const diffMs = end - start;
-                return Math.round(diffMs / (1000 * 60)); // Durata in minuti
-            }
-
-
-            async function saveSessionToFirestore() {
-                try {
-                    const session = appState.currentSession;
-                    const results = calculateTotalSessionResults(session);
-
-                    const finalSession = {
-                        ...session,
-                        ...results,
-                        timestamp: serverTimestamp(),
-                        userId: appState.userId,
-                    };
-
-                    const docRef = await addDoc(window.getSessionsCollectionRef(), finalSession);
-                    console.log("Documento scritto con ID: ", docRef.id);
-                    
-                    // Resetta lo stato dopo il salvataggio
-                    appState.currentSession = null;
-                    appState.currentTurn = 1;
-
-                } catch (e) {
-                    console.error("Errore nell'aggiunta del documento: ", e);
-                    showModal("Errore di Salvataggio", "Non è stato possibile salvare la sessione. Controlla la console per i dettagli.", [{ text: "Ok", handler: () => {} }]);
-                }
-            }
-
-            function calculateTotalSessionResults(session) {
-                const turn1Summary = session.turn1?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0 };
-                const turn2Summary = session.turn2?.summary || { score: 0, X: 0, Ten: 0, Nine: 0, frecceTirate: 0 };
-                
-                const totalScore = turn1Summary.score + turn2Summary.score;
-                const totalShots = turn1Summary.frecceTirate + turn2Summary.frecceTirate;
-
-                return {
-                    totalScore: totalScore,
-                    totalX: turn1Summary.X + turn2Summary.X,
-                    totalTen: turn1Summary.Ten + turn2Summary.Ten,
-                    totalNine: turn1Summary.Nine + turn2Summary.Nine,
-                    totalAverage: totalShots > 0 ? (totalScore / totalShots) : 0,
-                    turn1Score: turn1Summary.score,
-                    turn1Average: turn1Summary.average,
-                    turn2Score: turn2Summary.score,
-                    turn2Average: turn2Summary.average,
-                };
             }
 
             // =================================================================================
@@ -873,12 +883,7 @@
                 });
             }
 
-            function handleFilterChange(field, value) {
-                filterState[field] = value;
-                fetchSessions(); // Riesegue la query con i nuovi filtri
-            }
-            window.handleFilterChange = handleFilterChange; // Espone globalmente
-
+            
             function renderDataSummary() {
                 const distinctArchers = Array.from(new Set(appState.sessionData.map(s => s.arciere))).sort();
 
@@ -911,7 +916,7 @@
                     <h2 class="text-3xl font-bold mb-6 text-white">Riepilogo Dati (User ID: ${appState.userId})</h2>
                     ${filtersHtml}
                     ${tableContainer}
-                    <button class="btn-primary w-full p-3 rounded-lg mt-6 bg-secondary-dark text-primary-orange border border-primary-orange" onclick="setView('mainMenu')">
+                    <button class="btn-primary w-full p-3 rounded-lg mt-6 bg-secondary-dark text-primary-orange border border-primary-orange" onclick="window.setView('mainMenu')">
                         Torna al Menu Principale
                     </button>
                 `;
@@ -946,7 +951,7 @@
                                 <tr><td colspan="12" class="p-4 text-center">Nessuna sessione trovata.</td></tr>
                             ` : appState.sessionData.map(session => `
                                 <tr class="${session.type === 'Gara' ? 'bg-orange-900 bg-opacity-30' : 'bg-gray-800'} hover:bg-secondary-dark cursor-pointer text-xs sm:text-sm"
-                                    onclick="setView('detailedSummary', { session: ${JSON.stringify(session).replace(/'/g, '&#39;')} })">
+                                    onclick="window.setView('detailedSummary', { session: ${JSON.stringify(session).replace(/'/g, '&#39;')} })">
                                     <td class="font-bold text-primary-orange underline">${session.date}</td>
                                     <td>${session.arciere}</td>
                                     <td>${session.type}</td>
@@ -974,7 +979,7 @@
             function renderDetailedSummary() {
                 const session = appState.detailedSession;
                 if (!session) {
-                    setView('dataSummary');
+                    window.setView('dataSummary');
                     return;
                 }
 
@@ -1013,7 +1018,7 @@
                         ${session.turn2 ? renderDetailedScoreGrid(session.turn2, 'Secondo Turno') : ''}
                     </div>
 
-                    <button class="btn-primary w-full p-3 rounded-lg mt-8" onclick="setView('dataSummary')">
+                    <button class="btn-primary w-full p-3 rounded-lg mt-8" onclick="window.setView('dataSummary')">
                         Torna al Riepilogo Dati
                     </button>
                 `;
@@ -1083,7 +1088,7 @@
             }
 
             // Inizializza l'applicazione al caricamento dell'autenticazione
-            setView('mainMenu');
+            window.setView('mainMenu');
         };
     </script>
 </body>
