@@ -364,7 +364,7 @@
                 document.getElementById('modal').classList.add('hidden');
             }
 
-            // **FUNZIONE GLOBALE:** Spostata fuori ma chiamata qui
+// **FUNZIONE GLOBALE:** Spostata fuori ma chiamata qui
             window.setView = (viewName, data = {}) => {
                 appState.view = viewName;
                 document.getElementById('content-view').innerHTML = '';
@@ -391,7 +391,18 @@
                         break;
                     case 'detailedSummary':
                         // CORREZIONE: Cerca la sessione nello stato tramite ID
-                        const sessionToView = appState.sessionData.find(s => s.id === data.sessionId);
+                        // Si utilizza String() per garantire che il confronto sia tra stringhe, prevenendo errori di tipo.
+                        const sessionToView = appState.sessionData.find(s => 
+                            String(s.id) === String(data.sessionId)
+                        );
+                        
+                        if (!sessionToView) {
+                            console.error("Sessione non trovata per l'ID:", data.sessionId);
+                            // Torna al riepilogo dati se la sessione non è stata trovata
+                            window.setView('dataSummary');
+                            return; 
+                        }
+                        
                         appState.detailedSession = sessionToView;
                         renderDetailedSummary();
                         break;
