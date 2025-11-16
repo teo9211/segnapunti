@@ -1086,7 +1086,7 @@
                 return turn.grid.map(rowStr => JSON.parse(rowStr));
             }
 
-            function renderDetailedScoreGrid(turn, title) {
+function renderDetailedScoreGrid(turn, title) {
                 // Deserializza la griglia qui
                 const grid2D = deserializeGrid(turn); 
                 
@@ -1121,7 +1121,7 @@
                                 <tbody>
                                     ${volleys.map((row, i) => `
                                         <tr class="${i % 2 === 0 ? 'bg-secondary-dark' : 'bg-gray-800'} hover:bg-gray-700 text-xs sm:text-sm">
-                                            <td class="font-bold">${row.volley}</td>
+                                            <td class="font-bold">${i + 1}</td>
                                             ${row.scores.map(score => `<td>${score || ''}</td>`).join('')}
                                             <td class="font-bold text-white">${row.parziale}</td>
                                             <td class="font-bold text-white">${row.totale}</td>
